@@ -1,9 +1,10 @@
-import sys, os
+import sys, os, db
 import pickle
 import glob
 import zipfile
 import subprocess
 
+PROJECT_PATH = "/Users/spenhand/Projects/Shuffle"
 TSM_BACKUP_PATH = "/Users/spenhand/Library/Application Support/TradeSkillMaster/TSMApplication/Backups"
 INDEX_FILE = "tsm_backup_index"
 SCAN_STRING_MATCH = "itemString,minBuyout,marketValue,numAuctions,quantity,lastScan\\n"
@@ -16,31 +17,20 @@ def extract_scan_data(backup_file):
             index = line.find(SCAN_STRING_MATCH)
             if index >= 0:
                 timestamp = None
-                data = {}
                 csv_start = index + len(SCAN_STRING_MATCH)
                 scan_csv = line[csv_start:-4].strip()
                 i = 0
                 for entry in scan_csv.split('\\n'):
                     values = list(entry.split(','))
-                    item_id = values[0][2:]
                     item_data = {}
+                    item_data['id'] = values[0][2:]
                     item_data['min_buyout'] = values[1]
                     item_data['market_value'] = values[2]
                     item_data['num_auctions'] = values[3]
                     item_data['quantity'] = values[4]
-                    if not 'timestamp' in data:
-                        data['timestamp'] = values[5]
-                    data[item_id] = item_data
-                return data
+                    item_data['timestamp'] = values[5]
+                    db.insert_scan(item_data)
         print("Could not find scan CSV line")
-
-def save_scan_data(data, directory):
-    timestamp = data['timestamp']
-    output_file = directory + '/tsm_scan_' + timestamp + '.pickle'
-    print(output_file)
-    with open(output_file, 'wb') as output:
-        pickle.dump(data, output, protocol=pickle.HIGHEST_PROTOCOL)
-    print("Wrote scan data to '" + output_file + "'")
 
 def find_new_backups(backup_path):
     previously_scanned = []
@@ -59,9 +49,10 @@ def find_new_backups(backup_path):
     for backup_zip in glob.glob("*.zip"):
         if backup_zip in previously_scanned:
             continue
-        subprocess.call(["7z", "x", "-y", "-o" + TEMP_DIR, backup_zip], stdout=open(os.devnull, 'wb'))
-        data = extract_scan_data(TEMP_DIR + "/" + "TradeSkillMaster.lua")
-        save_scan_data(data, cwd + "/" + BACKUP_SCAN_DIR)
+        full_temp_dir = TSM_BACKUP_PATH + "/" + TEMP_DIR
+        backup_path = TSM_BACKUP_PATH + "/" + backup_zip
+        subprocess.call(["/usr/local/bin/7z", "x", "-y", "-o" + full_temp_dir, backup_path], stdout=open(os.devnull, 'wb'))
+        extract_scan_data(full_temp_dir + "/" + "TradeSkillMaster.lua")
         scanned.append(backup_zip)
 
     os.chdir(cwd)
@@ -71,4 +62,5 @@ def find_new_backups(backup_path):
 
     print("Scanned " + str(len(scanned)) + " new backups")
     
+os.chdir(PROJECT_PATH)
 find_new_backups(TSM_BACKUP_PATH)
